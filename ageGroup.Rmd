@@ -1,0 +1,69 @@
+---
+title: "ageGroup"
+author: "Alex"
+date: "20/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# loading age group data
+```{r}
+age <- read.csv("data/cases/processed/confirmed_cases_age_complete.csv", header = T)
+head(age)
+library(dplyr)
+age.counts.by.group <- age %>% group_by(notification_date) %>% count(age_group)
+write.csv(age.counts.by.group, "data/cases/processed/confirmed_cases_age_complete2.csv", 
+          row.names = F)
+```
+# Group ages
+```{r}
+age.counts.by.group
+young <- c("0-19")
+middle <- c("20-24", "25-29", "30-34", "35-39")
+old <- c("40-44", "45-49", "50-54", "55-59")
+older <- c("60-64", "70+")
+
+aggregateAge <- function(age) 
+{
+  if (age %in% young)
+    {return("0-19")}
+  else if(age %in% middle)
+    {return("20-39")}
+  else if(age %in% old)
+    {return("40-59")}
+  else{return("60+")}
+}
+age.counts.by.group$age_group <- unlist(lapply(age.counts.by.group$age_group, aggregateAge))
+age.counts.aggregated <- age.counts.by.group %>% group_by(notification_date, age_group) %>% summarise(cases = sum(n))
+
+write.csv(age.counts.aggregated, "data/cases/processed/confirmed_cases_age_aggregated.csv", 
+          row.names = F)
+```
+
+# Normalising by population
+```{r}
+youngPop <- (465135+478184+443009+448425)/1000000
+middlePop <- (489673+527161+540360+499724)/1000000
+oldPop <- (503169+492440+485546+469726)/1000000
+olderPop <- (420044+384470+292556+217308+155806+167506)/1000000
+
+age.counts.normalised <- age.counts.aggregated
+age.counts.normalised[age.counts.normalised$age_group == "0-19", "cases"]/youngPop
+
+young <- c("0-19")
+middle <- c("20-24", "25-29", "30-34", "35-39")
+old <- c("40-44", "45-49", "50-54", "55-59")
+older <- c("60-64", "70+")
+
+age.counts.normalised <- transform(age.counts.normalised, cases=ifelse(age_group=="0-19", cases/youngPop, 
+                  ifelse(age_group=="20-39", cases/middlePop, 
+                         ifelse(age_group=="40-59", cases/oldPop, 
+                                ifelse(age_group=="60+", cases/olderPop, cases)))))
+age.counts.normalised$cases <- round(age.counts.normalised$cases, 2)
+write.csv(age.counts.normalised, "data/cases/processed/confirmed_cases_age_normalised.csv", 
+          row.names = F)
+```
+

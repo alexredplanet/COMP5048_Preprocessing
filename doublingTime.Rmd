@@ -1,0 +1,33 @@
+---
+title: "doublingTime"
+author: "Alex"
+date: "19/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Loading Cases Per Day Data
+```{r}
+cases <- read.csv("data/cases/processed/confirmed_cases_per_day.csv", header = T)
+head(cases)
+library(dplyr)
+cases.count$date <- as.Date(cases.count$date)
+# Get sum of cases to date
+sum_cases <- cases.count %>% arrange(date) %>% mutate(total_cases = cumsum(cases))
+# Calculate growth rates
+growth_rate <- sum_cases %>%
+  # first sort by year
+  arrange(date) %>%
+  mutate(diff_days = date - lag(date),  # Difference in time (just in case there are gaps)
+         growth = total_cases - lag(total_cases), # Difference in route between years
+         growth_rate = (growth / as.numeric(diff_days, units = "days"))/total_cases * 100) # growth rate in percent
+doubling_time <- growth_rate %>%
+  mutate(double_time = as.numeric(diff_days, units="days")*(log(2)/(log(1+growth_rate/100))))
+doubling_time <- na.omit(doubling_time)
+write.csv(doubling_time, "data/cases/processed/doubling_time.csv", 
+          row.names = FALSE)
+```
+

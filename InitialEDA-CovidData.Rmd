@@ -1,0 +1,214 @@
+---
+title: "EDA-Covid-Data"
+author: "Alexander Mars"
+date: "30/09/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Cases Data
+## Cases by location
+Getting cases by location and creating a count per LGA for each date, may be useful for visualising number of cases vs. LGA trends over time. 
+```{r}
+library(dplyr)
+# Contains the date and LGA of each case
+# can aggregate by LGA for each date to get a count by LGA
+cases.location <- read.csv("https://data.nsw.gov.au/data/dataset/aefcde60-3b0c-4bc0-9af1-6fe652944ec2/resource/21304414-1ff1-4243-a5d2-f52778048b29/download/confirmed_cases_table1_location.csv", header = T)
+head(cases.location)
+dim(cases.location)
+# retain relevant columns
+keep <- c("notification_date", "postcode", "lga_name19")
+cases.location <- cases.location[, names(cases.location) %in% keep]
+# Missing values
+colSums(cases.location == "None") # there are 1043 missing postcode values
+colSums(cases.location == "") # there are 1043 missing location values total
+cases.location[cases.location ==""] <- NA
+cases.location[cases.location == "None"] <- NA
+colSums(is.na(cases.location))
+# Drop rows with missing values
+cases.location.complete <- na.omit(cases.location)
+# Save complete data
+write.csv(cases.location.complete, "data/cases/processed/confirmed_cases_location_complete.csv", 
+          row.names = FALSE)
+# Count the number of cases per postcode for each date
+cases.location.count <- cases.location.complete %>%
+  group_by(notification_date, postcode) %>%
+  summarise(n = n())
+dim(cases.location.count)
+colnames(cases.location.count) <- c("date", "postcode", "cases")
+tail(cases.location.count)
+# Save output
+write.csv(cases.location.count, "data/cases/processed/confirmed_cases_count_by_postcode.csv", 
+          row.names = FALSE)
+# Count the number of cases per LGA for each date
+cases.location.count.lga <- cases.location.complete %>%
+  group_by(notification_date, lga_name19) %>%
+  summarise(n = n())
+dim(cases.location.count.lga)
+colnames(cases.location.count.lga) <- c("date", "lga", "cases")
+tail(cases.location.count.lga)
+# Save output
+write.csv(cases.location.count.lga, "data/cases/processed/confirmed_cases_count_by_lga.csv", 
+          row.names = FALSE)
+
+# Total number of cases per day
+cases.day.count <- cases.location %>%
+  group_by(notification_date) %>%
+  summarise(cases = n())
+colnames(cases.day.count) <- c("date", "cases")
+head(cases.day.count)
+# save output
+write.csv(cases.day.count, "data/cases/processed/confirmed_cases_per_day.csv", 
+          row.names = FALSE)
+# Inspect time period
+min(cases.day.count$date)
+max(cases.day.count$date)
+max(as.Date(cases.day.count$date)) - min(as.Date(cases.day.count$date))
+```
+## Cases by age group
+The age group data doesn't appear to match up to the location data above, 
+it covers a shorter time period
+```{r}
+# Loading in the age data
+cases.age <- read.csv("data/cases/confirmed_cases_table2_age_group.csv", header = T)
+head(cases.age)
+dim(cases.age) # observations don't match up to the confirmed cases table
+# Processing
+# Convert to date format
+cases.age$notification_date <- as.Date(cases.age$notification_date)
+# Remove "AgeGroup_" from age_group column
+cases.age$age_group <- gsub("AgeGroup_", "", cases.age$age_group)
+# Recheck for missing values
+sum(cases.age$age_group == "None")
+cases.age[cases.age$age_group == "None",] <- NA
+colSums(is.na(cases.age))
+# Drop missing values
+cases.age.complete <- na.omit(cases.age)
+# Date range
+max(cases.age.complete$notification_date)-min(cases.age.complete$notification_date)
+min(cases.age.complete$notification_date) # starting in june 2021
+# Save output
+write.csv(cases.age.complete, "data/cases/processed/confirmed_cases_age_complete.csv", 
+          row.names = FALSE)
+```
+
+## Cases by likely source
+
+Nothing was done with the likely source data alone, but the source + location data
+was processed.
+```{r}
+# Can process the data to have a local/overseas column, and a linked/unlinked column
+cases.source.location <- read.csv("https://data.nsw.gov.au/data/dataset/97ea2424-abaf-4f3e-a9f2-b5c883f42b6a/resource/2776dbb8-f807-4fb2-b1ed-184a6fc2c8aa/download/confirmed_cases_table4_location_likely_source.csv", header = T)
+head(cases.source.location, 10)
+# Missing values
+cases.source.location[cases.source.location ==""] <- NA
+cases.source.location[cases.source.location == "None"] <- NA
+colSums(is.na(cases.source.location))
+cases.source.location.complete <- na.omit(cases.source.location)
+
+# Split the source into local/overseas and known/unknown
+# create local, overseas, interstate column
+unique(cases.source.location.complete$likely_source_of_infection)
+source <- strsplit(cases.source.location.complete$likely_source_of_infection, " ")
+source <- lapply(source, function(split.list) split.list[1])
+source <- unlist(source)
+cases.source.location.complete$source <- source
+# create known/unknown column
+# applies only to locally acquired cases
+# 0 means not local, 1 means unknown, 2 means ongoing, 3 means known
+known <- strsplit(cases.source.location.complete$likely_source_of_infection, "-")
+known <- lapply(known, function(split.list) split.list[2])
+known[is.na(known)] <- 0
+known[known == " no links to known case or cluster"] <- 1
+known[known == " investigation ongoing"] <- 2
+known[known == " linked to known case or cluster"] <- 3
+known <- unlist(known)
+cases.source.location.complete$known <- known
+head(cases.source.location.complete)
+keepList <- c("notification_date", "source", "known", "postcode", "lga_name19")
+
+cases.source.location.complete = subset(cases.source.location.complete, 
+                                        select = keepList)
+head(cases.source.location.complete)
+# save output
+write.csv(cases.source.location.complete, "data/cases/processed/confirmed_cases_source_location.csv", 
+          row.names = FALSE)
+```
+
+
+# Tests Data
+Only the aggregated data was dealt with (unaggregated seems useless)
+```{r}
+# Aggregated Data
+test.pcr.aggregated <- read.csv("data/tests/pcr_testing_table2_age_group_agg.csv",
+                                header = T)
+str(test.pcr.aggregated)
+# Replace "AgeGroup_" with ""
+test.pcr.aggregated$age_group <- gsub("AgeGroup_", "", test.pcr.aggregated$age_group)
+# Check for missing values
+unique(test.pcr.aggregated$age_group) 
+sum(test.pcr.aggregated$age_group == "None") # 139 instances without an age group
+test.pcr.aggregated$test_count <- as.numeric(test.pcr.aggregated$test_count)
+head(test.pcr.aggregated)
+test.pcr.aggregated[test.pcr.aggregated == "None"] <- NA
+test.pcr.aggregated.complete <- na.omit(test.pcr.aggregated)
+# Save completed data
+write.csv(test.pcr.aggregated.complete, "data/tests/processed/pcr_testing_age_group_complete.csv", 
+          row.names = FALSE)
+min(test.pcr.aggregated.complete$test_date)
+max(test.pcr.aggregated.complete$test_date)
+# Save data with good age labels
+write.csv(test.pcr.aggregated, "data/tests/processed/pcr_testing_age_group.csv", 
+          row.names = FALSE)
+```
+
+Create a total tests by date table (sum over all age groups)
+```{r}
+pcr.test.count <- test.pcr.aggregated %>%
+  group_by(test_date) %>%
+  summarise(tests = sum(test_count))
+tail(pcr.test.count)
+write.csv(pcr.test.count, "data/tests/processed/total_tests_by_date.csv", 
+          row.names = FALSE)
+```
+
+Testing by location data:
+```{r}
+pcr.location <- read.csv("data/tests/pcr_testing_table1_location_agg.csv", header = T)
+colSums(pcr.location == "None")
+pcr.location[pcr.location == "None"] <- NA
+pcr.location.complete <- na.omit(pcr.location)
+pcr.location.complete$test_date <- as.Date(pcr.location.complete$test_date)
+min(pcr.location.complete$test_date)
+max(pcr.location.complete$test_date)
+max(pcr.location.complete$test_date) - min(pcr.location.complete$test_date)
+head(pcr.location.complete)
+# Save output
+write.csv(pcr.location.complete, "data/tests/processed/test_by_location_complete.csv", 
+          row.names = FALSE)
+```
+
+# Clinics Data
+Seeing as postcode is used for test and cases data, 
+we could inspect the number of clinics per postcode as an indicator 
+of testing availability.
+```{r}
+clinics <- read.csv("data/clinics/nsw-health-covid-19-test-clinics-2021-09-30-0915.csv", 
+                    header = T)
+str(clinics)
+clinics.by.postcode <- clinics[names(clinics) %in% c("title", "Postcode")]
+clinics.by.postcode.count <- clinics.by.postcode %>%
+  group_by(Postcode) %>%
+  summarise(clinics = n())
+# save output
+write.csv(clinics.by.postcode.count, "data/clinics/processed/num_clinics_by_postcode.csv", 
+          row.names = FALSE)
+head(clinics.by.postcode.count)
+range(clinics.by.postcode.count$clinics) # not a huge difference anyway
+```
+
+Transport and flight data not included.
+

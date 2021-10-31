@@ -1,0 +1,241 @@
+---
+title: "NSW Geo Data"
+author: 'UniKey: amar6958, SID:450347582'
+date: "05/10/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Read Shapefile
+
+```{r}
+library(rgdal)
+nsw.shp <- readOGR( 
+  dsn="data/nswGeo/LocalGovernmentArea.shp",  verbose=FALSE
+)
+```
+# Link cases by LGA to the shapefile
+
+We can link the datasets by making sure the LGA names match up. 
+```{r}
+cases.count.by.lga <- read.csv("data/cases/processed/confirmed_cases_count_by_lga.csv", header = T)
+unique(cases.count.by.lga$lga)
+# To make the lga names in the cases data match the geo data lga names,
+# we need to capitalise them and remove the characters in brackets
+cases.count.by.lga$lga <- unlist(lapply(cases.count.by.lga$lga, 
+                                        function (lga) {
+                                          toupper(gsub(" \\(.*?\\)", "", lga))
+                                          }))
+
+```
+## Checking for differences
+
+There may be differences, due to different naming conventions for the LGAs, or
+due to the fact that some LGAs may not have had any cases during the pandemic. 
+
+```{r}
+nsw.shp$lganame[!(nsw.shp$lganame %in% cases.count.by.lga$lga)]
+```
+```{r}
+unique(cases.count.by.lga$lga[!(cases.count.by.lga$lga %in% nsw.shp$lganame)])
+```
+We can adjust these manually, except for correctional settings, which 
+appears to be a count of COVID cases that have occurred in Prison. Since this 
+does not relate to geographic information and is not impacted by mobility or 
+lockdown measures, we should probably remove information from correctional 
+settings. The rest of the suburb names can be corrected manually.
+```{r}
+cases.count.by.lga[cases.count.by.lga$lga == "PARRAMATTA", "lga"] <- "CITY OF PARRAMATTA"
+cases.count.by.lga[cases.count.by.lga$lga == "LITHGOW", "lga"] <- "LITHGOW CITY"
+cases.count.by.lga[cases.count.by.lga$lga == "NAMBUCCA", "lga"] <- "NAMBUCCA VALLEY"
+cases.count.by.lga[cases.count.by.lga$lga == "ALBURY", "lga"] <- "ALBURY CITY"
+cases.count.by.lga[cases.count.by.lga$lga == "UPPER HUNTER SHIRE", "lga"] <- "UPPER HUNTER"
+cases.count.by.lga[cases.count.by.lga$lga == "WARRUMBUNGLE SHIRE", "lga"] <- "WARRUMBUNGLE"
+cases.count.by.lga.reduced <- cases.count.by.lga[cases.count.by.lga$lga != "CORRECTIONAL SETTINGS", ]
+cases.count.by.lga.reduced
+unique(cases.count.by.lga.reduced$lga[!(cases.count.by.lga.reduced$lga %in% nsw.shp$lganame)])
+write.csv(cases.count.by.lga.reduced, "data/nswGeo/confirmed_cases_count_by_lga_geo.csv", 
+          row.names = FALSE)
+```
+
+# Linking Source of Case to Shapefile
+We can also link data for known source of cases to the shapefile:
+```{r}
+cases.source <- read.csv("data/cases/processed/confirmed_cases_source_location.csv", header = 
+T)
+head(cases.source)
+colnames(cases.source) <- c("date", "source", "known", "postcode", "lga")
+cases.source$lga <- unlist(lapply(cases.source$lga,
+                                  function (lga) {
+                                    toupper(gsub(" \\(.*?\\)", "", lga))
+                                    }))
+```
+
+```{r}
+nsw.shp$lganame[!(nsw.shp$lganame %in% cases.source$lga)]
+```
+
+```{r}
+unique(cases.source$lga[!(cases.source$lga %in% nsw.shp$lganame)])
+```
+```{r}
+cases.source[cases.source$lga == "PARRAMATTA", "lga"] <- "CITY OF PARRAMATTA"
+cases.source[cases.source$lga == "LITHGOW", "lga"] <- "LITHGOW CITY"
+cases.source[cases.source$lga == "NAMBUCCA", "lga"] <- "NAMBUCCA VALLEY"
+cases.source[cases.source$lga == "ALBURY", "lga"] <- "ALBURY CITY"
+cases.source[cases.source$lga == "UPPER HUNTER SHIRE", "lga"] <- "UPPER HUNTER"
+cases.source[cases.source$lga == "WARRUMBUNGLE SHIRE", "lga"] <- "WARRUMBUNGLE"
+cases.source.reduced <- cases.source[cases.source$lga != "CORRECTIONAL SETTINGS", ]
+unique(cases.source.reduced$lga[!(cases.source.reduced$lga %in% nsw.shp$lganame)])
+write.csv(cases.source.reduced, "data/nswGeo/confirmed_cases_source_by_lga_geo.csv", 
+          row.names = FALSE)
+```
+We can create a count of the number of cases in total, and the count for the different source types, for each LGA on each date.
+```{r}
+library(dplyr)
+head(cases.source.reduced)
+cases.source.reduced2 <- cases.source.reduced %>%
+  group_by(lga, date, source) %>%
+  summarise(cases = n())
+cases.source.reduced2
+write.csv(cases.source.reduced2, "data/nswGeo/confirmed_cases_source_count_by_lga_geo.csv", 
+          row.names = FALSE)
+```
+
+# Linking Test Data to Shapefile
+```{r}
+pcr.location <- read.csv("data/tests/processed/test_by_location_complete.csv", 
+          header = T)
+head(pcr.location)
+pcr.location.shp <- pcr.location[,names(pcr.location) %in% c("test_date",
+                                                             "postcode",
+                                                             "lga_name19",
+                                                             "test_count")]
+colnames(pcr.location.shp) <- c("date", "postcode", "lga", "test_count")
+head(pcr.location.shp)
+pcr.location.shp$lga <- unlist(lapply(pcr.location.shp$lga,
+                                  function (lga) {
+                                    toupper(gsub(" \\(.*?\\)", "", lga))
+                                    }))
+```
+```{r}
+nsw.shp$lganame[!(nsw.shp$lganame %in% pcr.location.shp$lga)]
+```
+```{r}
+unique(pcr.location.shp$lga[!(pcr.location.shp$lga %in% nsw.shp$lganame)])
+```
+```{r}
+pcr.location.shp[pcr.location.shp$lga == "PARRAMATTA", "lga"] <- "CITY OF PARRAMATTA"
+pcr.location.shp[pcr.location.shp$lga == "LITHGOW", "lga"] <- "LITHGOW CITY"
+pcr.location.shp[pcr.location.shp$lga == "NAMBUCCA", "lga"] <- "NAMBUCCA VALLEY"
+pcr.location.shp[pcr.location.shp$lga == "ALBURY", "lga"] <- "ALBURY CITY"
+pcr.location.shp[pcr.location.shp$lga == "UPPER HUNTER SHIRE", "lga"] <- "UPPER HUNTER"
+pcr.location.shp[pcr.location.shp$lga == "WARRUMBUNGLE SHIRE", "lga"] <- "WARRUMBUNGLE"
+pcr.location.shp.reduced <- pcr.location.shp[pcr.location.shp$lga != "CORRECTIONAL SETTINGS", ]
+unique(pcr.location.shp.reduced$lga[!(pcr.location.shp.reduced$lga %in% nsw.shp$lganame)])
+write.csv(pcr.location.shp.reduced, "data/nswGeo/tests_by_lga_geo.csv", 
+          row.names = FALSE)
+head(pcr.location.shp.reduced)
+```
+```{r}
+library(dplyr)
+head(pcr.location.shp.reduced)
+pcr.location.shp.reduced2 <- pcr.location.shp.reduced %>%
+  group_by(date, lga) %>%
+  summarise(tests = sum(test_count))
+median(pcr.location.shp.reduced2$tests)
+```
+# Link data to LGA populations
+```{r}
+pop.dat <- read.csv("data/nswGeo/lga_population.csv", header = T)
+pop.dat <- pop.dat[ , colSums(is.na(pop.dat)) == 0]
+pop.dat$population <- as.numeric(gsub(",", "", pop.dat$population))
+pop.dat$density <- as.numeric(pop.dat$density)
+pop.dat$lga <- toupper(gsub("Council", "", pop.dat$lga))
+pop.dat$lga
+move_substr_to_front <- function(string)
+{
+  splits <- unlist(strsplit(string, ", "))
+  if (length(splits) > 1){
+  front <- splits[2]
+  back <- splits[1]
+  return(paste(front, back))
+  } else {
+    return(string)
+  }
+}
+
+pop.dat$lga2 <- unlist(lapply(pop.dat$lga, move_substr_to_front))
+pop.dat$lga2 <- gsub("SHIRE", "", pop.dat$lga2)
+pop.dat$lga2 <- trimws(pop.dat$lga2)
+pop.dat$lga2 <- gsub("CITY OF ", "", pop.dat$lga2)
+pop.dat$lga2 <- gsub("MUNICIPALITY OF ", "", pop.dat$lga2)
+pop.dat
+pop.dat[pop.dat$lga2 == "PARRAMATTA", "lga2"] <- "CITY OF PARRAMATTA"
+pop.dat[pop.dat$lga2 == "LITHGOW", "lga2"] <- "LITHGOW CITY"
+pop.dat[pop.dat$lga2 == "NAMBUCCA", "lga2"] <- "NAMBUCCA VALLEY"
+pop.dat[pop.dat$lga2 == "ALBURY", "lga2"] <- "ALBURY CITY"
+pop.dat[pop.dat$lga2 == "SUTHERLAND", "lga2"] <- "SUTHERLAND SHIRE"
+pop.dat[pop.dat$lga2 == "THE HILLS", "lga2"] <- "THE HILLS SHIRE"
+pop.dat[pop.dat$lga2 == "UPPER LACHLAN", "lga2"] <- "UPPER LACHLAN SHIRE"
+pop.dat[pop.dat$lga2 == "GREATER HUME", "lga2"] <- "GREATER HUME SHIRE"
+pop.dat[pop.dat$lga2 == "BATHURST REGION", "lga2"] <- "BATHURST REGIONAL"
+pop.dat[pop.dat$lga2 == "UNINCORPORATED FAR WEST", "lga2"] <- "UNINCORPORATED - FAR WEST AREA"
+pop.dat[pop.dat$lga2 == "LORD HOWE ISLAND", "lga2"] <- "UNINCORPORATED - LORD HOWE ISLAND"
+pop.dat[pop.dat$lga2 == "QUEANBEYAN–PALERANG REGIONAL", "lga2"] <- "QUEANBEYAN-PALERANG REGIONAL"
+pop.dat$lga <- pop.dat$lga2
+pop.dat <- pop.dat[, !(names(pop.dat) %in% c("lga2"))]
+```
+```{r}
+unique(pop.dat$lga2[!(pop.dat$lga2 %in% nsw.shp$lganame)])
+```
+
+
+```{r}
+nsw.shp$lganame[!(nsw.shp$lganame %in% pop.dat$lga2)]
+```
+```{r}
+pop.dat # Population by LGA
+pcr.location.shp.reduced2 # tests by LGA over date
+cases.count.by.lga.reduced
+
+pcr.location.shp.reduced.pop <- merge(pcr.location.shp.reduced2, pop.dat, by = "lga")
+pcr.location.shp.reduced.pop <- pcr.location.shp.reduced.pop[order(pcr.location.shp.reduced.pop$date),]
+pcr.location.shp.reduced.pop$test_pop <- log(pcr.location.shp.reduced.pop$tests / (pcr.location.shp.reduced.pop$population))
+normalize <- function(vals, upper = 100)
+{
+  vals <- (vals - min(vals)) / (max(vals)-min(vals))
+  return(round(vals*100, 2)) 
+}
+pcr.location.shp.reduced.pop$test_pop <- normalize(pcr.location.shp.reduced.pop$test_pop)
+
+cases.count.by.lga.reduced.pop <- merge(cases.count.by.lga.reduced, pop.dat, by = "lga")
+cases.count.by.lga.reduced.pop <- cases.count.by.lga.reduced.pop[order(cases.count.by.lga.reduced.pop$date),]
+cases.count.by.lga.reduced.pop$case_pop <- log(cases.count.by.lga.reduced.pop$cases / (cases.count.by.lga.reduced.pop$population))
+cases.count.by.lga.reduced.pop$case_pop <- normalize(cases.count.by.lga.reduced.pop$case_pop)
+cases.count.by.lga.reduced.pop
+# save files 
+write.csv(pcr.location.shp.reduced.pop, "data/nswGeo/tests_by_lga_pop_geo.csv", 
+          row.names = FALSE)
+write.csv(cases.count.by.lga.reduced.pop, "data/nswGeo/cases_by_lga_pop_geo.csv", 
+          row.names = FALSE)
+```
+```{r}
+
+```
+
+
+# Get NSW Postal Areas 
+
+Clinic data is only available by postcode, so we can't use the LGA shapefile
+as a postcode may span multiple LGAs. 
+```{r}
+library(rgdal)
+aus.postal <- readOGR( 
+  dsn="data/ausGeoPostal/POA_2016_AUST.shp",  verbose=FALSE
+)
+```
+
